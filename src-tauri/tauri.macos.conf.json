@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "resources": {
+      "../resources/node": "node/node"
+    }
+  }
+}

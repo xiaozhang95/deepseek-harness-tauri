@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DeepSeek Harness",
+  "version": "0.1.0",
+  "identifier": "com.deepseek.dsh-desktop",
+  "build": {
+    "frontendDist": "../assets"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "loading",
+        "title": "DeepSeek Harness",
+        "width": 1280,
+        "height": 860,
+        "center": true,
+        "resizable": false,
+        "maximizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "backgroundColor": "#151517",
+        "visible": true
+      },
+      {
+        "label": "main",
+        "title": "DeepSeek Harness",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 800,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "backgroundColor": "#151517",
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.icns", "icons/icon.png"],
+    "resources": {
+      "../resources/dsh.zip": "vendor/dsh.zip",
+      "../config.json": "config.json"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "languages": ["SimpChinese"]
+      }
+    }
+  }
+}

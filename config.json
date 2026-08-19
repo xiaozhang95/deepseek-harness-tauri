@@ -1,0 +1,10 @@
+{
+  "$comment": "DeepSeek Harness Tauri 壳集中配置。主壳（src-tauri）与运行时装配工具（build-runtime）均从这里读取；缺失字段回退内置默认值。路径支持 ~（用户主目录）与 %APPDATA%（系统 AppData）展开。",
+  "appName": "DeepSeek Harness",
+  "port": 3090,
+  "maxWaitMs": 90000,
+  "pollMs": 800,
+  "nodeVersion": "24.19.0",
+  "dataHome": "~/.dsh",
+  "extractDir": "%APPDATA%/DeepSeek Harness/dsh"
+}

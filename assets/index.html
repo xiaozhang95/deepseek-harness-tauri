@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeepSeek Harness</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        user-select: none;
+        cursor: default;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        /* 暗黑主题：贴近 dsh web 底色 #151517，仅顶部一层极淡的柔光 */
+        background: radial-gradient(110vmax 70vmax at 50% -18%, rgba(255, 255, 255, 0.05), transparent 62%), #151517;
+      }
+      body.light {
+        /* 亮色主题：底色 #ffffff，顶部一层极淡的冷色柔光 */
+        background: radial-gradient(110vmax 70vmax at 50% -18%, rgba(24, 32, 88, 0.045), transparent 62%), #ffffff;
+      }
+      /* 启动画面主体：品牌字标 assets/brand-wordmark.svg
+         （由 scripts/setup-runtime.mjs 装配），文件内部用 prefers-color-scheme
+         媒体查询切换配色；应用主题与系统主题不一致时由 applyTheme 反转修正。 */
+      .logo {
+        width: 364px;
+        height: 48px;
+        margin: 0 auto 24px;
+      }
+      .logo .wordmark {
+        width: 100%;
+        height: 100%;
+        display: block;
+        pointer-events: none;
+      }
+      .status {
+        font-size: 15px;
+        color: #cfd3d6;
+        letter-spacing: 2px;
+        min-height: 22px;
+      }
+      body.light .status {
+        color: #61666b;
+      }
+      .error {
+        margin-top: 14px;
+        font-size: 12px;
+        color: #e24b4a;
+        max-width: 520px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="logo" aria-hidden="true">
+      <img class="wordmark" src="./brand-wordmark.svg" alt="" aria-hidden="true" />
+    </div>
+    <div class="status" id="status">正在启动…</div>
+    <div class="error" id="error"></div>
+    <script>
+      window.__dshLoading = {
+        setStatus: function (text) {
+          if (text) document.getElementById('status').textContent = text
+        },
+        /**
+         * 应用启动主题（由壳层 Rust 侧注入 window.__dshTheme = 'light' | 'dark'）。
+         * brand-wordmark.svg 颜色跟随系统主题（prefers-color-scheme）；当应用
+         * 主题与系统主题不一致时，用 invert(1) 反转修正。
+         */
+        applyTheme: function () {
+          var appLight = window.__dshTheme === 'light'
+          document.body.classList.toggle('light', appLight)
+          var systemLight = window.matchMedia('(prefers-color-scheme: light)').matches
+          var mark = document.querySelector('.wordmark')
+          if (mark) mark.style.filter = appLight !== systemLight ? 'invert(1)' : ''
+        },
+      }
+      // Rust 侧可能尚未注入 __dshTheme（on_page_load 时机差异），先按系统主题兜底
+      if (typeof window.__dshTheme === 'undefined') {
+        window.__dshTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+      }
+      window.__dshLoading.applyTheme()
+    </script>
+  </body>
+</html>

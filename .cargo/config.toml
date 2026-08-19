@@ -1,0 +1,29 @@
+# 工程级 cargo 配置（Windows / MSVC）。
+#
+# 1) 显式指定 MSVC 链接器：在 Git Bash 环境下 rustc 会在 PATH 里先命中
+#    Git Bash 自带的 GNU coreutils link.exe（硬链接工具），导致链接报
+#    "link: extra operand"。指向 VS 的 MSVC link.exe 可绕开。
+# 2) 显式补 /LIBPATH（Windows SDK + UCRT + MSVC CRT）：rustc 不自动注入
+#    vcvars64 的 LIB 环境变量，缺了 link.exe 报 LNK1181（kernel32.lib）。
+#
+# 注意：MSVC 版本目录（14.51.x）与 Windows SDK 版本（10.0.26100.0）
+# 随工具链升级会变，升级后需同步；也可以改用 run.ps1（自动从 vcvars64
+# 注入环境）而不用本文件里的 rustflags。
+[target.x86_64-pc-windows-msvc]
+linker = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\link.exe"
+rustflags = [
+  "-C", "link-arg=/LIBPATH:C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64",
+  "-C", "link-arg=/LIBPATH:C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64",
+  "-C", "link-arg=/LIBPATH:C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/lib/x64",
+]
+
+# 3) crates.io 镜像（字节 rsproxy，sparse 协议，Cargo >= 1.68）：
+#    cargo build / cargo tauri build 拉 Rust 依赖（tauri、serde 等几百个 crate）
+#    默认走 crates.io（AWS），国内慢且易超时。走工程级配置而非全局
+#    ~/.cargo/config.toml，只影响本工程，不动其他项目。
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
