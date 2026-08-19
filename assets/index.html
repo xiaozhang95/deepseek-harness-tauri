@@ -25,9 +25,9 @@
         /* 亮色主题：底色 #ffffff，顶部一层极淡的冷色柔光 */
         background: radial-gradient(110vmax 70vmax at 50% -18%, rgba(24, 32, 88, 0.045), transparent 62%), #ffffff;
       }
-      /* 启动画面主体：品牌字标 assets/brand-wordmark.svg
-         （由 scripts/setup-runtime.mjs 装配），文件内部用 prefers-color-scheme
-         媒体查询切换配色；应用主题与系统主题不一致时由 applyTheme 反转修正。 */
+      /* 启动画面主体：品牌字标 assets/brand-wordmark.svg，文件固定为
+         白色字标（深色版配色）；应用为亮色时由 applyTheme 用 invert(1)
+         反转为黑色。不再依赖 prefers-color-scheme，避免深色模式先黑后白。 */
       .logo {
         width: 364px;
         height: 48px;
@@ -70,20 +70,21 @@
         },
         /**
          * 应用启动主题（由壳层 Rust 侧注入 window.__dshTheme = 'light' | 'dark'）。
-         * brand-wordmark.svg 颜色跟随系统主题（prefers-color-scheme）；当应用
-         * 主题与系统主题不一致时，用 invert(1) 反转修正。
+         * brand-wordmark.svg 固定为白色字标；应用为亮色时用 invert(1) 反转为黑色。
+         * filter 设置在 <img> 上，SVG 加载完成后同样生效，不存在首帧竞态。
          */
         applyTheme: function () {
           var appLight = window.__dshTheme === 'light'
           document.body.classList.toggle('light', appLight)
-          var systemLight = window.matchMedia('(prefers-color-scheme: light)').matches
           var mark = document.querySelector('.wordmark')
-          if (mark) mark.style.filter = appLight !== systemLight ? 'invert(1)' : ''
+          if (mark) mark.style.filter = appLight ? 'invert(1)' : ''
         },
       }
-      // Rust 侧可能尚未注入 __dshTheme（on_page_load 时机差异），先按系统主题兜底
+      // Rust 侧可能尚未注入 __dshTheme（on_page_load 时机差异）。SVG 固定白色字标、
+      // body 默认深色背景，首帧直接按深色渲染最稳（不受 WKWebView 外观同步竞态影响），
+      // 待 Rust 注入真实主题后由 applyTheme 修正。
       if (typeof window.__dshTheme === 'undefined') {
-        window.__dshTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+        window.__dshTheme = 'dark'
       }
       window.__dshLoading.applyTheme()
     </script>
