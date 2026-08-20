@@ -186,6 +186,9 @@ pub async fn boot(handle: &AppHandle) -> Result<Option<Child>, String> {
         .arg("web")
         .arg("--port")
         .arg(port.to_string())
+        // --no-open：dsh web 默认会用系统默认浏览器打开 UI（面向 CLI 场景）；
+        // Tauri 壳自己导航主窗口到该地址，不需要服务再开一个浏览器
+        .arg("--no-open")
         .current_dir(&extract_root)
         .env("DSH_HOME", &dsh_home)
         .stdin(std::process::Stdio::null());
