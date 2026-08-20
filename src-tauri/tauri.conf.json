@@ -51,7 +51,10 @@
         "installMode": "perMachine",
         "displayLanguageSelector": false,
         "installerIcon": "icons/icon.ico",
-        "languages": ["SimpChinese"]
+        "languages": ["SimpChinese"],
+        "customLanguageFiles": {
+          "SimpChinese": "nsis/SimpChinese.nsh"
+        }
       }
     }
   }
