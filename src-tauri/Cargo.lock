@@ -669,7 +669,7 @@ dependencies = [
 
 [[package]]
 name = "deepseek-harness-tauri"
-version = "0.1.0"
+version = "0.1.0-rc.8"
 dependencies = [
  "serde",
  "serde_json",

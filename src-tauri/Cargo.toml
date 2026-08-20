@@ -1,7 +1,7 @@
 [package]
 name = "deepseek-harness-tauri"
-version = "0.1.0"
-description = "DeepSeek Harness 桌面壳（Tauri）：启动内嵌 dsh web 服务并在原生窗口打开 Web UI"
+version = "0.1.0-rc.8"
+description = "DeepSeek Harness Tauri"
 edition = "2021"
 rust-version = "1.77.2"
 
