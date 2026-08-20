@@ -32,5 +32,8 @@ cargo tauri build
 | `pollMs`      | 800                                                                                                    | 健康轮询间隔                                                                |
 | `nodeVersion` | 24.19.0                                                                                                | build-runtime 下载的独立 Node 版本                                          |
 | `dataHome`    | `~/.dsh`                                                                                               | DSH_HOME（profiles/sessions 等用户数据，`~` = 用户主目录）                  |
-| `extractDir`  | Windows: `%APPDATA%/DeepSeek Harness/dsh`；macOS: `~/Library/Application Support/DeepSeek Harness/dsh` | dsh.zip 解压目录（`%APPDATA%` 模板仅 Windows 生效，mac 上会回退平台默认值） |
 | `appName`     | DeepSeek Harness                                                                                       | 应用显示名（预留）                                                          |
+
+运行时布局：`build-runtime` 把依赖闭包物化到 `resources/vendor/dsh/`，
+`tauri.conf.json` 的 resources 目录映射在安装阶段把它铺到安装目录（无需首次启动解压），
+服务日志落在 `~/.dsh/dsh-service.log`。

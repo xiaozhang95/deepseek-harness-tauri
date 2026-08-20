@@ -5,6 +5,5 @@
   "maxWaitMs": 90000,
   "pollMs": 800,
   "nodeVersion": "24.19.0",
-  "dataHome": "~/.dsh",
-  "extractDir": "%APPDATA%/DeepSeek Harness/dsh"
+  "dataHome": "~/.dsh"
 }

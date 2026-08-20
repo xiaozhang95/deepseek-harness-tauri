@@ -1,4 +1,4 @@
-// dsh 服务启动器：解压内置运行时 → 拉起内置 node 跑 dsh web → 就绪后切主窗口。
+// dsh 服务启动器：安装器已把 vendor/dsh 运行时铺到安装目录 → 拉起内置 node 跑 dsh web → 就绪后切主窗口。
 
 use std::fs;
 use std::io::{Read, Write};
@@ -21,7 +21,6 @@ pub struct DshConfig {
     pub max_wait_ms: Option<u64>, // 服务就绪最长等待
     pub poll_ms: Option<u64>,     // 健康轮询间隔
     pub data_home: Option<String>,  // DSH_HOME 路径模板（~/.dsh）
-    pub extract_dir: Option<String>, // 运行时解压目录路径模板（Windows 默认 %APPDATA%/DeepSeek Harness/dsh）
 }
 
 /// node 二进制的资源名：Windows 带 .exe，其他平台（macOS）无扩展名。
@@ -47,21 +46,6 @@ impl DshConfig {
     /// DSH_HOME（profiles / sessions / credentials 等用户数据）。
     fn data_home(&self) -> PathBuf {
         expand_path(self.data_home.as_deref().unwrap_or("~/.dsh"))
-    }
-    /// 运行时解压目录。默认按平台区分；配置写了 %APPDATA% 模板但在非 Windows 上跑时
-    /// 无法展开——回退平台默认，而不是解压出字面 "%APPDATA%" 路径。
-    fn extract_dir(&self) -> PathBuf {
-        let default = if cfg!(target_os = "macos") {
-            "~/Library/Application Support/DeepSeek Harness/dsh"
-        } else {
-            "%APPDATA%/DeepSeek Harness/dsh"
-        };
-        match self.extract_dir.as_deref() {
-            Some(template) if cfg!(windows) || !template.contains("%APPDATA%") => {
-                expand_path(template)
-            }
-            _ => expand_path(default),
-        }
     }
 }
 
@@ -135,23 +119,18 @@ pub async fn boot(handle: &AppHandle) -> Result<Option<Child>, String> {
     let max_wait_ms = config.max_wait_ms();
     let poll_ms = config.poll_ms();
     let node_exe = resolve_resource(handle, node_resource_name())?;
-    let dsh_zip = resolve_resource(handle, "vendor/dsh.zip")?;
-    let extract_root = config.extract_dir();
-    let bin = extract_root.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
+    // 运行时由安装器直接铺在 resource_dir/vendor/dsh（NSIS 安装阶段复制完成），
+    // 应用不再解压——升级即自动刷新运行时，也没有首次启动的解压等待。
+    let vendor_root = resolve_resource(handle, "vendor/dsh")?;
+    let bin = vendor_root.join("node_modules/@deepseek-ai/dsh/lib/bin.js");
     let dsh_home = config.data_home();
 
-    // 1) 解压内置运行时（幂等：bin.js 已存在则复用）
+    // 1) 校验运行时就位（缺失说明打包时漏了资源，直接报错而不是静默失败）
     if !bin.exists() {
-        if !dsh_zip.exists() {
-            return Err(format!(
-                "未找到内置运行时归档 {}；请先运行 build-runtime 装配运行时",
-                dsh_zip.display()
-            ));
-        }
-        // 首次解压耗时数秒到数十秒，把阶段提示推给 loading 页（对齐 Electron 版）
-        set_loading_status(handle, "正在解压内置运行时…");
-        extract_zip(&dsh_zip, &extract_root)
-            .map_err(|e| format!("解压内置运行时到 {} 失败: {e}", extract_root.display()))?;
+        return Err(format!(
+            "未找到内置运行时 {}；请先运行 build-runtime 装配运行时并重新打包",
+            bin.display()
+        ));
     }
 
     // 2) 端口探测：已有 DSH 服务直接接管（比如用户先手动启动了 dsh web）；
@@ -170,7 +149,7 @@ pub async fn boot(handle: &AppHandle) -> Result<Option<Child>, String> {
 
     // 3) 启动服务子进程。为什么用随包捆绑的 node 而不是系统 Node：koffi（目录选择器）
     //    等 N-API 原生模块只兼容官方构建的 Node（ABI 一致），系统 Node 变体可能运行期崩溃。
-    //    工作目录设为解压根，保证相对路径解析和 `pnpm dsh web` 一致。
+    //    工作目录设为 vendor 根，保证相对路径解析和 `pnpm dsh web` 一致。
     set_loading_status(handle, "正在启动内置服务…");
     // macOS/Linux：安装器复制资源时可能丢可执行位，spawn 前兜底 chmod 755。
     #[cfg(unix)]
@@ -189,17 +168,14 @@ pub async fn boot(handle: &AppHandle) -> Result<Option<Child>, String> {
         // --no-open：dsh web 默认会用系统默认浏览器打开 UI（面向 CLI 场景）；
         // Tauri 壳自己导航主窗口到该地址，不需要服务再开一个浏览器
         .arg("--no-open")
-        .current_dir(&extract_root)
+        .current_dir(&vendor_root)
         .env("DSH_HOME", &dsh_home)
         .stdin(std::process::Stdio::null());
 
-    // 服务 stdout/stderr 重定向到 extract_dir 同级的 dsh-service.log（append 保留历史）：
-    // release 构建没有终端，之前用 Stdio::null 会导致服务崩溃时零输出、无法诊断。
+    // 服务 stdout/stderr 重定向到 DSH_HOME 下的 dsh-service.log（append 保留历史）：
+    // 安装目录（Program Files）不可写，日志必须落在用户可写目录。
     // 日志问题绝不能阻止服务启动——打开/克隆失败一律回退 null。
-    let log_path = extract_root
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("dsh-service.log");
+    let log_path = dsh_home.join("dsh-service.log");
     if let Some(parent) = log_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
@@ -286,13 +262,31 @@ fn tauri_theme(theme: &str) -> tauri::Theme {
     }
 }
 
+/// 去掉 Windows verbatim 路径前缀（`\\?\C:\...` / `\\?\UNC\server\...`）。
+/// Tauri 的 resource_dir() 内部经过 canonicalize，在 Windows 上返回 verbatim 形态；
+/// Rust 文件 API 处理它没问题（存在性检查等照常工作），但把这种路径作为入口
+/// 传给子进程（node）时，Node 的 realpathSync 会对裸盘符 `C:` 做 lstat 并抛
+/// EISDIR（实测 Node 24 复现），服务启动即崩——所以跨进程边界前必须转普通路径。
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let text = path.as_os_str().to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        // `\\?\UNC\server\share\...` → `\\server\share\...`
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        // `\\?\C:\...` → `C:\...`
+        return PathBuf::from(rest.to_string());
+    }
+    path
+}
+
 /// 定位资源文件：优先打包后的 resource_dir（安装目录下），
 /// 否则回退到本工程 resources/（开发模式；由 build-runtime 装配）。
 fn resolve_resource(handle: &AppHandle, relative: &str) -> Result<PathBuf, String> {
     if let Ok(dir) = handle.path().resource_dir() {
         let candidate = dir.join(relative);
         if candidate.exists() {
-            return Ok(candidate);
+            return Ok(strip_verbatim_prefix(candidate));
         }
     }
     // 开发回退：src-tauri/../resources = 本工程 resources/
@@ -301,7 +295,7 @@ fn resolve_resource(handle: &AppHandle, relative: &str) -> Result<PathBuf, Strin
         .join("resources")
         .join(relative);
     if dev.exists() {
-        return Ok(dev);
+        return Ok(strip_verbatim_prefix(dev));
     }
     Err(format!(
         "找不到资源 {relative}（resource_dir 与本工程 resources/ 均不存在，请先运行 build-runtime 装配运行时）"
@@ -362,34 +356,6 @@ fn probe_port(port: u16) -> std::io::Result<bool> {
     let _ = stream.read_to_end(&mut buf);
     let text = String::from_utf8_lossy(&buf);
     Ok(text.contains(DSH_BOOT_MARKER))
-}
-
-/// 纯 Rust 解压 zip（不依赖系统解压工具，跨平台一致）；拒绝 `..` 和空段（路径穿越防护）。
-fn extract_zip(zip_path: &Path, dest: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(dest)?;
-    let file = fs::File::open(zip_path)?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|e| std::io::Error::other(e.to_string()))?;
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        if entry.is_dir() {
-            continue; // 目录条目无需创建（写文件时会自动建父目录）
-        }
-        let name = entry.name().replace('\\', "/");
-        // 路径穿越防护 + 忽略空段/根条目
-        if name.split('/').any(|seg| seg == ".." || seg.is_empty()) {
-            continue;
-        }
-        let out_path = dest.join(&name);
-        if let Some(parent) = out_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let mut out = fs::File::create(&out_path)?;
-        std::io::copy(&mut entry, &mut out)?;
-    }
-    Ok(())
 }
 
 // --- 主窗口主题实时跟随 ------------------------------------------------------

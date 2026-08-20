@@ -1,15 +1,14 @@
 // build-runtime：dsh 运行时装配工具（独立 crate）。
-// 从主仓库 + 网络装配两个大件到 resources/：dsh.zip（物化+裁剪+压缩）和独立 node。
+// 从主仓库 + 网络装配两个大件到 resources/：vendor/dsh 目录树（物化+裁剪）和独立 node。
+// 产出的 vendor/dsh 由 tauri.conf.json 的 resources 目录映射直接打进安装包，
+// 安装器（NSIS/DMG）在安装阶段铺到安装目录，应用首次启动无需解压。
 // 用法见工程根 README.md。
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::env;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
-
-use zip::write::SimpleFileOptions;
-use zip::CompressionMethod;
 
 // --- 路径 ----------------------------------------------------------------
 
@@ -275,56 +274,7 @@ fn prune_vendor_tree(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// --- 3) 打包 dsh.zip --------------------------------------------------------
-
-/// 收集目录下所有文件，返回 (完整路径, 相对 base 的 `/` 分隔名)。
-/// zip 内部统一用 `/` 分隔，保证跨平台解压一致。
-fn walk_files(dir: &Path, base: &Path, files: &mut Vec<(PathBuf, String)>) -> Result<(), Box<dyn std::error::Error>> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let full = entry.path();
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            walk_files(&full, base, files)?;
-        } else if file_type.is_file() {
-            let name = full
-                .strip_prefix(base)
-                .map_err(|e| format!("strip_prefix 失败: {e}"))?
-                .components()
-                .map(|c| c.as_os_str().to_string_lossy())
-                .collect::<Vec<_>>()
-                .join("/");
-            files.push((full, name));
-        }
-    }
-    Ok(())
-}
-
-/// 把裁剪后的 vendor 树压缩成单个 dsh.zip（deflate 压缩、UTF-8 文件名）。
-/// 用 zip crate 而不是外部工具：纯 Rust、跨平台一致、无环境依赖。
-fn bundle_vendor_zip(vendor_tree: &Path, out_zip: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let mut files = Vec::new();
-    walk_files(vendor_tree, vendor_tree, &mut files)?;
-    if let Some(parent) = out_zip.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let file = File::create(out_zip)?;
-    let mut writer = zip::ZipWriter::new(file);
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-    for (full, name) in &files {
-        writer.start_file(name.as_str(), options)?;
-        let mut data = Vec::new();
-        File::open(full)?.read_to_end(&mut data)?;
-        writer.write_all(&data)?;
-    }
-    writer.finish()?;
-
-    let zip_size = fs::metadata(out_zip)?.len() as f64 / 1024.0 / 1024.0;
-    println!("[build-runtime] dsh.zip 生成：{} 个文件，{zip_size:.1} MB → {}", files.len(), out_zip.display());
-    Ok(())
-}
-
-// --- 4) 下载独立 Node 运行时 -------------------------------------------------
+// --- 3) 下载独立 Node 运行时 -------------------------------------------------
 //
 // Windows → resources/node.exe（win-x64 zip，zip crate 解压）
 // macOS   → resources/node（darwin-x64 / darwin-arm64 tar.gz，系统 tar 解压；
@@ -555,7 +505,7 @@ fn main() {
     }
 }
 
-/// 主流程：校验主仓库 → 物化 → 裁剪 → 打包 zip → 下载 node。
+/// 主流程：校验主仓库 → 物化 → 裁剪 → 下载 node。
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let root = root_dir();
     let repo = resolve_repo();
@@ -570,15 +520,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let vendor_tree = root.join("resources").join("vendor").join("dsh");
     let out_dir = root.join("resources");
-    let out_zip = out_dir.join("dsh.zip");
     let node_version = read_node_version(&root);
 
     materialize_vendor_tree(&repo, &vendor_tree)?;
     prune_vendor_tree(&vendor_tree)?;
-    bundle_vendor_zip(&vendor_tree, &out_zip)?;
     fetch_node_runtime(&out_dir, &node_version)?;
 
     let node_name = if cfg!(windows) { "node.exe" } else { "node" };
-    println!("\n[build-runtime] 完成：resources/dsh.zip + resources/{node_name} 已就绪，可执行 cargo run / tauri build。");
+    println!("\n[build-runtime] 完成：resources/vendor/dsh + resources/{node_name} 已就绪，可执行 cargo run / tauri build。");
     Ok(())
 }

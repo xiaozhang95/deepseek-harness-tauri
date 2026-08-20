@@ -43,7 +43,7 @@
     "targets": ["nsis"],
     "icon": ["icons/icon.ico", "icons/icon.icns", "icons/icon.png"],
     "resources": {
-      "../resources/dsh.zip": "vendor/dsh.zip",
+      "../resources/vendor/dsh/": "vendor/dsh/",
       "../config.json": "config.json"
     },
     "windows": {
