@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dsh-remote",
+  "description": "允许内嵌 dsh Web UI（127.0.0.1 远程页面）调用宿主命令，实现会话日志的原生另存为保存。",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:3090", "http://localhost:3090"]
+  },
+  "local": false,
+  "permissions": [
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "allow-save-session-log"
+  ]
+}

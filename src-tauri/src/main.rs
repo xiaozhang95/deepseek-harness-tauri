@@ -2,6 +2,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod download;
 mod server;
 
 use std::process::Child;
@@ -20,10 +21,17 @@ fn main() {
                 let _ = window.set_focus();
             }
         }))
+        // 原生「另存为」对话框：session log 导出在 WebView 里走宿主保存
+        .plugin(tauri_plugin_dialog::init())
         .manage(ServerHandle(Mutex::new(None)))
-        // 全局"页面加载完成"回调：只用于给 loading 页注入主题 + 重放启动状态文案
+        // 会话日志原生保存命令（base64 解码 + 写盘）
+        .invoke_handler(tauri::generate_handler![download::save_session_log])
+        // 全局"页面加载完成"回调：loading 页注入主题 + 重放启动状态文案；
+        // dsh Web UI 页注入会话日志原生保存补丁（幂等）
         .on_page_load(|webview, payload| {
-            // 导航到 127.0.0.1（dsh Web UI）后跳过，不污染应用页面
+            // 导航到 127.0.0.1（dsh Web UI）后跳过，不污染应用页面；
+            // 下载补丁由 server::start_download_patch_sync 轮询注入（on_page_load
+            // 对 navigate 目标页是否触发不可靠）
             if payload
                 .url()
                 .host_str()

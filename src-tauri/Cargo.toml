@@ -1,6 +1,6 @@
 [package]
 name = "deepseek-harness-tauri"
-version = "0.1.0-rc.8"
+version = "0.1.1-rc.2"
 description = "DeepSeek Harness Tauri"
 edition = "2021"
 rust-version = "1.77.2"
@@ -11,9 +11,11 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "fs"] }
+base64 = "0.22"
 
 [profile.release]
 codegen-units = 1

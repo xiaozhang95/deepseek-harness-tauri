@@ -246,6 +246,10 @@ fn navigate_to_ui(handle: &AppHandle, port: u16) -> Result<(), String> {
             .map_err(|e| format!("导航到服务地址失败: {e}"))?;
     }
     start_theme_sync(handle);
+    // 会话日志原生保存补丁轮询注入：WebView 不处理程序化 <a download>（见
+    // download_patch.js），且 on_page_load 对 navigate 目标页是否触发不可靠，
+    // 所以导航后轮询注入直到确认装好
+    start_download_patch_sync(handle);
     // 最后关 loading，避免它遮住主窗口刚显示的内容
     if let Some(loading) = handle.get_webview_window("loading") {
         let _ = loading.close();
@@ -363,6 +367,81 @@ fn probe_port(port: u16) -> std::io::Result<bool> {
 /// 标题栏图标：暗色标题栏配浅色 logo，亮色标题栏配深色 logo。编译期嵌入二进制。
 const ICON_DARK_PNG: &[u8] = include_bytes!("../../assets/icon.png");
 const ICON_LIGHT_PNG: &[u8] = include_bytes!("../../assets/icon-light.png");
+
+// --- 会话日志原生保存补丁注入 -------------------------------------------------
+
+/// 导航后轮询注入下载补丁（幂等）：WebView 不处理程序化 `<a download>` 点击，
+/// 需要在 dsh UI 页就绪后装好拦截脚本（download_patch.js），把导出锚点点击改走
+/// 宿主保存。不依赖 on_page_load（对 navigate 目标页是否触发不可靠），仿照
+/// start_theme_sync 每 500ms 探测一次，直到确认安装。顺带打印 __TAURI_INTERNALS__
+/// （远程 IPC 桥）是否存在，用于定位 capability 是否生效。
+fn start_download_patch_sync(handle: &AppHandle) {
+    let Some(window) = handle.get_webview_window("main") else { return };
+
+    #[derive(Default)]
+    struct State {
+        installed: bool,
+    }
+    let state = std::sync::Arc::new(std::sync::Mutex::new(State::default()));
+
+    tauri::async_runtime::spawn(async move {
+        // 探测 JS：补丁是否装好 + 远程 IPC 桥是否存在 + 当前 origin +
+        // 拦截/保存诊断（由 download_patch.js 写入 window.__dshLast*）
+        const PROBE: &str = "JSON.stringify({ \
+            installed: window.__dshNativeSaveInstalled === true, \
+            internals: typeof window.__TAURI_INTERNALS__ === 'object' \
+                && typeof window.__TAURI_INTERNALS__.invoke === 'function', \
+            origin: location.origin, \
+            intercepted: window.__dshLastIntercept ? true : false, \
+            lastError: window.__dshLastError || null, \
+            saved: window.__dshLastSaved === true \
+        })";
+        let mut ticks = 0u32;
+        let mut monitor = 0u32;
+        loop {
+            let delay = if state.lock().unwrap().installed {
+                Duration::from_secs(1)
+            } else {
+                Duration::from_millis(500)
+            };
+            tokio::time::sleep(delay).await;
+            ticks += 1;
+            let win = window.clone();
+            let st = state.clone();
+            // 未确认安装前每轮注入一次（脚本内部有幂等守卫，重复执行无害）
+            if !st.lock().unwrap().installed {
+                let _ = win.eval(crate::download::PATCH_JS);
+            }
+            if win
+                .eval_with_callback(PROBE, move |value| {
+                    let raw = serde_json::from_str::<String>(&value).unwrap_or_default();
+                    eprintln!("[dsh-tauri] 下载补丁探测: {raw}");
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+                        if parsed.get("installed").and_then(|v| v.as_bool()) == Some(true) {
+                            st.lock().unwrap().installed = true;
+                        }
+                    }
+                })
+                .is_err()
+            {
+                break; // 窗口已销毁
+            }
+            if state.lock().unwrap().installed && ticks >= 2 {
+                if monitor == 0 {
+                    eprintln!("[dsh-tauri] 下载补丁已就位，继续监控 30s（点击按钮后看 intercepted/lastError/saved）");
+                }
+                monitor += 1;
+                if monitor >= 30 {
+                    eprintln!("[dsh-tauri] 监控结束");
+                    break;
+                }
+            } else if ticks >= 120 {
+                eprintln!("[dsh-tauri] 下载补丁轮询 60s 超时，未确认安装");
+                break;
+            }
+        }
+    });
+}
 
 /// 启动 200ms 轮询：把 dsh UI 的实际配色（页面 color-scheme / data-ds-dark-theme）
 /// 同步到窗口标题栏 + 背景色 + 图标。页面内切主题时窗口装饰不会自己变，需要壳层来"搬"。

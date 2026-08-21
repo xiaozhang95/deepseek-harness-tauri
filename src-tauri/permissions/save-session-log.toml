@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-save-session-log"
+description = "允许内嵌 dsh Web UI 调用 save_session_log，把导出的会话归档写入用户选择的路径。"
+commands.allow = ["save_session_log"]
